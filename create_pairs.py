@@ -1,14 +1,5 @@
-"""Write input -> organelle pairs (best-focus slices) to a CSV.
+"""Write one wide row per input image (with its best-focus organelle images) to a CSV."""
 
-Run:  python create_pairs.py [--out input_output_pairs.csv]
-
-One row per (input modality, organelle) for every kept image, ordered by
-study, image_id, organelle. input_z / output_z are the z numbers in the filenames
-of the best-focus slices (not the TSV's position-style best_z). Images and organelle
-channels that data_validation.py says to ignore are left out. Pairs whose best z is
-still to be computed (e.g. Study_59 Phase, until reconcile.py has run) are left out
-too and counted in the printed summary.
-"""
 import argparse
 from collections import Counter
 
@@ -16,26 +7,54 @@ import pandas as pd
 
 from data_validation import INPUT_MODALITIES, check_all
 
-COLUMNS = ["study", "image_id", "input_modality", "input_z", "input_file", "organelle", "output_z", "output_file"]
+ORGANELLES = ["Nucleus", "Mitochondria", "Tubulin", "Actin"]
+KEY = ["study", "image_id", "input_modality"]
+COLUMNS = (
+    KEY
+    + ["input_z", "input_file"]
+    + [f"{o.lower()}_{part}" for o in ORGANELLES for part in ("file", "z")]
+)
+Z_COLUMNS = ["input_z"] + [f"{o.lower()}_z" for o in ORGANELLES]
 
 
-def build_pairs():
+def build_rows():
     _, images = check_all()
     rows, pending = [], Counter()
     for image in images:
         if image["drop_reason"]:
             continue
         inputs = {c: v for c, v in image["channels"].items() if c in INPUT_MODALITIES}
-        outputs = {c: v for c, v in image["channels"].items() if c not in INPUT_MODALITIES}
+        outputs = {
+            c: v for c, v in image["channels"].items() if c not in INPUT_MODALITIES
+        }
+        unknown = set(outputs) - set(ORGANELLES)
+        if unknown:
+            raise ValueError(
+                f"{image['study']} image {image['image_id']}: unknown organelle channel(s) {sorted(unknown)}"
+            )
         for modality, (in_z, in_file) in inputs.items():
-            for organelle, (out_z, out_file) in outputs.items():
-                if in_z is None or out_z is None:
-                    pending[image["study"]] += 1
-                    continue
-                rows.append([image["study"], image["image_id"], modality, in_z, in_file, organelle, out_z, out_file])
-    pairs = pd.DataFrame(rows, columns=COLUMNS)
-    pairs = pairs.sort_values(["study", "image_id", "organelle", "input_modality"]).reset_index(drop=True)
-    return pairs, pending
+            row = {
+                "study": image["study"],
+                "image_id": image["image_id"],
+                "input_modality": modality,
+                "input_z": in_z,
+                "input_file": in_file,
+            }
+            for organelle in ORGANELLES:
+                z, file = outputs.get(organelle, (None, None))
+                row[f"{organelle.lower()}_z"], row[f"{organelle.lower()}_file"] = (
+                    z,
+                    file,
+                )
+            if in_z is None or all(
+                row[f"{o.lower()}_file"] is None for o in ORGANELLES
+            ):
+                pending[image["study"]] += 1
+                continue
+            rows.append(row)
+    table = pd.DataFrame(rows, columns=COLUMNS).sort_values(KEY).reset_index(drop=True)
+    table[Z_COLUMNS] = table[Z_COLUMNS].astype("Int64")
+    return table, pending
 
 
 def main():
@@ -43,14 +62,17 @@ def main():
     parser.add_argument("--out", default="input_output_pairs.csv")
     args = parser.parse_args()
 
-    pairs, pending = build_pairs()
-    pairs.to_csv(args.out, index=False)
+    table, pending = build_rows()
+    table.to_csv(args.out, index=False)
 
-    print(f"Wrote {len(pairs)} pairs to {args.out}")
-    for organelle, n in pairs.organelle.value_counts().items():
-        print(f"  {organelle}: {n}")
+    n_pairs = int(sum(table[f"{o.lower()}_file"].notna().sum() for o in ORGANELLES))
+    print(f"Wrote {len(table)} rows ({n_pairs} input-organelle pairs) to {args.out}")
+    for organelle in ORGANELLES:
+        print(
+            f"  {organelle}: {int(table[f'{organelle.lower()}_file'].notna().sum())} rows"
+        )
     for study, n in pending.items():
-        print(f"Left out {n} pairs in {study}: best z still to be computed")
+        print(f"Left out {n} rows in {study}: best z still to be computed")
 
 
 if __name__ == "__main__":
