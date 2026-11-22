@@ -2,12 +2,13 @@
 
 import argparse
 from collections import Counter
+from pathlib import Path
 
 import pandas as pd
 
-from data_validation import INPUT_MODALITIES, check_all
+from lmc.config import INPUT_MODALITIES, ORGANELLES, PAIRS_FILE
+from lmc.prep.validate import check_all
 
-ORGANELLES = ["Nucleus", "Mitochondria", "Tubulin", "Actin"]
 KEY = ["study", "image_id", "input_modality"]
 COLUMNS = (
     KEY
@@ -59,10 +60,11 @@ def build_rows():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--out", default="input_output_pairs.csv")
+    parser.add_argument("--out", default=str(PAIRS_FILE))
     args = parser.parse_args()
 
     table, pending = build_rows()
+    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     table.to_csv(args.out, index=False)
 
     n_pairs = int(sum(table[f"{o.lower()}_file"].notna().sum() for o in ORGANELLES))

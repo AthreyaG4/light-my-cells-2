@@ -1,6 +1,6 @@
 """Download only the files listed in input_output_pairs.csv from the Light My Cells share.
 
-Run:  python download_data.py [Study_04 Study_27 ...] [--dry-run] [--workers 4] [--out data]
+Run:  uv run python -m lmc.prep.download [Study_04 Study_27 ...] [--dry-run] [--workers 4] [--out data]
 
 --stacks fetches, before the CSV exists, the full z-stacks of the channels that have files but no
 best_z (Study_59 PC), so reconcile.py can score them. --prune-stacks deletes those slices afterwards
@@ -22,12 +22,13 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-ROOT = Path(__file__).resolve().parent
+from lmc.config import DATA_DIR, ORGANELLE_COLUMNS, PAIRS_FILE
+
 SHARE = "https://seafile.lirmm.fr/d/6b9534811c8e4ed989a9"
 LISTING = (
     "https://seafile.lirmm.fr/api/v2.1/share-links/6b9534811c8e4ed989a9/dirents/?path=/"
 )
-ORGANELLES = ["nucleus", "mitochondria", "tubulin", "actin"]
+ORGANELLES = ORGANELLE_COLUMNS
 ZIP64 = 0xFFFFFFFF
 
 
@@ -182,10 +183,10 @@ def needed_files(pairs, study):
 def stack_files(use_computed=True):
     """{study: slice files} of every channel stack whose best focus has to be computed here.
 
-    These are the channels the TSV has files for but no best_z (see data_validation.py), e.g. the
+    These are the channels the TSV has files for but no best_z (see lmc.prep.validate), e.g. the
     Study_59 PC images. With use_computed=True, stacks already in computed_best_focus.csv are left out.
     """
-    from data_validation import TO_COMPUTE, check_all, load_files
+    from lmc.prep.validate import TO_COMPUTE, check_all, load_files
 
     issues, _ = check_all(use_computed=use_computed)
     tables, wanted = {}, {}
@@ -217,7 +218,7 @@ def main():
     parser.add_argument(
         "studies", nargs="*", help="e.g. Study_04 (default: every study in the CSV)"
     )
-    parser.add_argument("--out", default=str(ROOT / "data"))
+    parser.add_argument("--out", default=str(DATA_DIR))
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument(
         "--dry-run", action="store_true", help="only report what would be downloaded"
@@ -236,7 +237,7 @@ def main():
 
     out = Path(args.out)
     if args.prune_stacks:
-        n = prune_stacks(out, pd.read_csv(ROOT / "input_output_pairs.csv"))
+        n = prune_stacks(out, pd.read_csv(PAIRS_FILE))
         print(f"Deleted {n} stack slices that are not pair files.")
         return
     if args.stacks:  # needed before input_output_pairs.csv can be built
@@ -249,7 +250,7 @@ def main():
             print("No stacks need to be fetched for best-focus computation.")
             return
     else:
-        pairs = pd.read_csv(ROOT / "input_output_pairs.csv")
+        pairs = pd.read_csv(PAIRS_FILE)
         wanted = {
             s: needed_files(pairs, s)
             for s in args.studies or sorted(pairs["study"].unique())

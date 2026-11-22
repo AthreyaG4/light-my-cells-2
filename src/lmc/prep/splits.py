@@ -1,6 +1,6 @@
 """Assign every image in input_output_pairs.csv to train or validation, holding out whole studies.
 
-Run:  python create_splits.py [--val-frac 0.10] [--seed 0] [--out splits.csv]
+Run:  uv run python -m lmc.prep.splits [--val-frac 0.10] [--seed 0] [--out metadata/splits.csv]
 
 Why whole studies: images from one study share cell line, microscope and imaging conditions, and
 they look alike (see worklog), so splitting inside a study would leak that into validation and make
@@ -12,7 +12,7 @@ organelle's validation share is closest to --val-frac, with at least --min-studi
 per organelle. The same seed always gives the same split.
 
 One row per (study, image_id); the two inputs of an image (Studies 74-76) share that row, so they
-always land on the same side. Writes splits.csv: study, image_id, split.
+always land on the same side. Writes metadata/splits.csv: study, image_id, split.
 """
 
 import argparse
@@ -20,7 +20,8 @@ import argparse
 import numpy as np
 import pandas as pd
 
-ORGANELLES = ["nucleus", "mitochondria", "tubulin", "actin"]
+from lmc.config import ORGANELLE_COLUMNS as ORGANELLES
+from lmc.config import PAIRS_FILE, SPLITS_FILE
 
 
 def image_table(pairs):
@@ -64,8 +65,8 @@ def choose_validation_studies(per_study, val_frac, max_frac, min_studies, tries,
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--pairs", default="input_output_pairs.csv")
-    parser.add_argument("--out", default="splits.csv")
+    parser.add_argument("--pairs", default=str(PAIRS_FILE))
+    parser.add_argument("--out", default=str(SPLITS_FILE))
     parser.add_argument("--val-frac", type=float, default=0.10, help="target share of each organelle's images")
     parser.add_argument("--max-frac", type=float, default=0.15, help="no organelle may exceed this share")
     parser.add_argument("--min-studies", type=int, default=3, help="held-out studies needed per organelle")

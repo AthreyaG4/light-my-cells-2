@@ -3,3 +3,7 @@ data/
 .claude
 __pycache__/
 .env
+runs/
+outputs/
+.pytest_cache/
+*.egg-info/

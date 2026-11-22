@@ -1,6 +1,6 @@
 """Validate the Light-my-cells study metadata against the 3 inconsistencies we found.
 
-Run:  python data_validation.py
+Run:  uv run python -m lmc.prep.validate
 
 How best_z works: `best_z` in best_focus.tsv is a 0-based POSITION in the sorted list of
 slices that all_files.tsv lists for that image and channel, not the z number in the filename.
@@ -21,15 +21,11 @@ Rules used to decide what to ignore:
     but has no z yet.
 """
 from collections import defaultdict
-from pathlib import Path
 
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parent
-DATA_DIR = ROOT / "data"
-INFO_DIR = DATA_DIR / "Study_info_filenames_and_optimal focus"
-COMPUTED_FILE = ROOT / "computed_best_focus.csv"  # written by reconcile.py: study,image_id,channel,best_z,method
-INPUT_MODALITIES = {"BF", "DIC", "PC", "Phase"}  # transmitted light; everything else is an organelle
+from lmc.config import COMPUTED_FILE, INFO_DIR, INPUT_MODALITIES
+
 CHANNEL_RENAMES = {"Study_59": {"Phase": "PC"}}  # all_files.tsv name -> name used in the files on disk
 
 BEST_Z_OUT_OF_RANGE = "best_z outside the listed slices"
@@ -205,7 +201,7 @@ def main():
 
     _print_by_study(skipped, per_channel)
 
-    for title, detail in [("BEST Z STILL TO COMPUTE (run reconcile.py)", TO_COMPUTE),
+    for title, detail in [("BEST Z STILL TO COMPUTE (run lmc.prep.reconcile)", TO_COMPUTE),
                           ("BEST Z RESOLVED from computed_best_focus.csv", RESOLVED)]:
         found = [i for i in issues if i["detail"] == detail]
         print(f"\n{title}: {len(found)} channel cases")

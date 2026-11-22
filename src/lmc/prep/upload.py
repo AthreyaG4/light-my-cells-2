@@ -1,11 +1,11 @@
 """Build the wide dataset study by study and push it to the Hugging Face Hub (private).
 
 Set REPO below and put HF_TOKEN=<your token> in .env (git-ignored), then run:
-    python upload_to_hub.py [--max-gb 3] [--delete]
+    uv run python -m lmc.prep.upload [--max-gb 3] [--delete]
 
 One parquet shard per study, named after its split from splits.csv (data/train-Study_XX.parquet or
 data/validation-Study_XX.parquet in the repo, so the Hub shows a train and a validation split;
-run create_splits.py first). Shards are uploaded a few studies per
+run lmc.prep.splits first). Shards are uploaded a few studies per
 commit (--max-gb of image files each), so only one batch of working files is on disk at a time.
 Studies already in the repo are skipped, so a re-run resumes. --delete removes a study's image
 files from disk once its batch is uploaded.
@@ -25,13 +25,13 @@ from dotenv import load_dotenv
 from huggingface_hub import HfApi
 from huggingface_hub.errors import RepositoryNotFoundError
 
+from lmc.config import DATA_DIR, ENV_FILE, ORGANELLE_COLUMNS, PAIRS_FILE, SPLITS_FILE
+
 REPO = "AG2307/light-my-cells"
-ROOT = Path(__file__).resolve().parent
-DATA = ROOT / "data"
-SPLITS_FILE = ROOT / "splits.csv"
+DATA = DATA_DIR
 SPLIT_NAMES = ["train", "validation"]
-load_dotenv(ROOT / ".env")
-ORGANELLES = ["nucleus", "mitochondria", "tubulin", "actin"]
+load_dotenv(ENV_FILE)
+ORGANELLES = ORGANELLE_COLUMNS
 
 feats = {
     "study": Value("string"),
@@ -47,7 +47,7 @@ FEATURES = Features(feats)
 
 
 def study_rows(study):
-    pairs = pd.read_csv(ROOT / "input_output_pairs.csv")
+    pairs = pd.read_csv(PAIRS_FILE)
     pairs = pairs[pairs["study"] == study]
     return pairs.astype(object).where(pairs.notna(), None).to_dict("records")
 
@@ -63,7 +63,7 @@ def files_of(study):
     missing = [p.name for p in paths if not p.exists()]
     if missing:
         raise FileNotFoundError(
-            f"{study}: {len(missing)} files missing, e.g. {missing[0]} (run download_data.py)"
+            f"{study}: {len(missing)} files missing, e.g. {missing[0]} (run `uv run python -m lmc.prep.download`)"
         )
     return paths
 
@@ -88,18 +88,18 @@ def rows(study):
 
 
 def study_splits():
-    """{study: 'train' or 'validation'} from splits.csv (whole studies are held out, see create_splits.py)."""
+    """{study: 'train' or 'validation'} from splits.csv (whole studies are held out, see lmc/prep/splits.py)."""
     if not SPLITS_FILE.exists():
-        raise SystemExit(f"{SPLITS_FILE.name} not found: run create_splits.py first")
+        raise SystemExit(f"{SPLITS_FILE.name} not found: run `uv run python -m lmc.prep.splits` first")
     splits = pd.read_csv(SPLITS_FILE)
     per_study = splits.groupby("study")["split"].agg(set)
     mixed = [s for s, v in per_study.items() if len(v) != 1]
     if mixed:
         raise SystemExit(f"{SPLITS_FILE.name} puts images of {mixed[0]} in both splits; splits must be per study")
     result = {s: next(iter(v)) for s, v in per_study.items()}
-    missing = set(pd.read_csv(ROOT / "input_output_pairs.csv")["study"]) - set(result)
+    missing = set(pd.read_csv(PAIRS_FILE)["study"]) - set(result)
     if missing:
-        raise SystemExit(f"{SPLITS_FILE.name} has no split for {sorted(missing)[0]}: re-run create_splits.py")
+        raise SystemExit(f"{SPLITS_FILE.name} has no split for {sorted(missing)[0]}: re-run `uv run python -m lmc.prep.splits`")
     return result
 
 
@@ -168,7 +168,7 @@ def main():
             f"'{splits[wrong[0]]}'. Restore the old splits.csv, or delete that shard from the repo first."
         )
 
-    pairs = pd.read_csv(ROOT / "input_output_pairs.csv")
+    pairs = pd.read_csv(PAIRS_FILE)
     studies = [
         s
         for s in sorted(pairs["study"].unique())
